@@ -1,0 +1,729 @@
+---
+title: "final_project"
+output: html_document
+date: "2023-06-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r load-packages, message=FALSE}
+# first, import all necessary libraries
+library(readr)
+library(dplyr)
+library(janitor)
+library(tidyverse)
+library(haven)
+
+library(tidyverse)
+library(tidymodels)
+library(schrute)
+library(lubridate)
+library(knitr)
+library(openintro)
+library(ROSE)
+library(randomForest)
+library(randomForestExplainer)
+library(mice)
+library(missForest)
+library(caret)
+library(glmnet)
+library(pROC)
+library(ggplot2)
+library(nnet)
+library(mlr)
+```
+
+```{r}
+#data <- read_sav("C://Users//dordo//OneDrive//Desktop//Project_Advanced_Prog//tedsd_puf_2020.sav")# filter out patients that did not complete their treatment
+load("C:\\Users\\Alisa\\Desktop\\tedsd_puf_2020_r.rdata")
+filtered_df <- subset(tedsa_puf_2020_r, REASON == 1)
+
+# filter insignificant columns, and columns that describe the patient's state at discharge
+filtered_df_col <- filtered_df[, !(names(filtered_df) %in% c("DISYR", "SERVICES_D", "REASON","EMPLOY_D", "LIVARAG_D", "ARRESTS_D, DETNLF_D", "FREQ_ATND_SELF_HELP_D"))]
+
+#check if there are cases where sub1 and sub2 and sub3 at admission or at discharge are not known / none
+cond_sub_none <- !(filtered_df_col$SUB1 %in% c(1, -9) & filtered_df_col$SUB2 %in% c(1, -9) & filtered_df_col$SUB3 %in% c(1, -9))
+cond_sub_none_d <- !(filtered_df_col$SUB1_D %in% c(1, -9) & filtered_df_col$SUB2_D %in% c(1, -9) & filtered_df_col$SUB3_D %in% c(1, -9))
+filtered_df_col$FREQ1[filtered_df_col$SUB1 == -9] <- -9
+filtered_df_col$FREQ2[filtered_df_col$SUB2 == -9] <- -9
+filtered_df_col$FREQ3[filtered_df_col$SUB3 == -9] <- -9
+
+filtered_df_col <- filtered_df_col[cond_sub_none | cond_sub_none_d,]
+
+# remove records where all discharge frequencies are unknown
+cond_freq_none_d <- filtered_df_col$FREQ1_D == -9 & filtered_df_col$FREQ2_D == -9 & filtered_df_col$FREQ3_D == -9
+filtered_df_col <- filtered_df_col[!cond_freq_none_d, ]
+```
+
+
+```{r}
+filtered_df_col
+```
+
+```{r}
+# Insert grades per substance to new columns
+filtered_df_col <- filtered_df_col %>%
+  mutate(GRADE1 = case_when(!(SUB1 %in% c(1, -9)) & SUB1==SUB1_D & 
+                              FREQ1 == 3 & FREQ1_D == 1 ~ 100,
+                            !(SUB1 %in% c(1, -9)) & !(SUB1_D %in% c(1, -9)) & 
+                              FREQ1 == 3 & FREQ1_D == 2 ~ 75,
+                            !(SUB1 %in% c(1, -9)) & !(SUB1_D %in% c(1, -9)) & 
+                              FREQ1 == 3 & FREQ1_D == 3 ~ 50,
+                            !(SUB1 %in% c(1, -9)) & !(SUB1_D %in% c(1, -9)) & 
+                              FREQ1 == 2 & FREQ1_D == 1 ~ 75,
+                            !(SUB1 %in% c(1, -9)) & !(SUB1_D %in% c(1, -9)) & 
+                              FREQ1 == 2 & FREQ1_D == 2 ~ 50,
+                            !(SUB1 %in% c(1, -9)) & !(SUB1_D %in% c(1, -9)) & 
+                              FREQ1 == 2 & FREQ1_D == 3 ~ 25,
+                            !(SUB1 %in% c(1, -9)) & !(SUB1_D %in% c(1, -9)) & 
+                              FREQ1 == 1 & FREQ1_D == 1 ~ 50,
+                            !(SUB1 %in% c(1, -9)) & !(SUB1_D %in% c(1, -9)) &
+                              FREQ1 == 1 & FREQ1_D == 2 ~ 25,
+                            !(SUB1 %in% c(1, -9)) & !(SUB1_D %in% c(1, -9)) &
+                              FREQ1 == 1 & FREQ1_D == 3 ~ 0,
+                            .default = NA)) %>%
+  mutate(GRADE2 = case_when(!(SUB2 %in% c(1, -9)) & SUB2==SUB2_D  &
+                              FREQ2 == 3 & FREQ2_D == 1 ~ 100,
+                            !(SUB2 %in% c(1, -9)) & !(SUB2_D %in% c(1, -9)) &
+                              FREQ2 == 3 & FREQ2_D == 2 ~ 75,
+                            !(SUB2 %in% c(1, -9)) & !(SUB2_D %in% c(1, -9)) &
+                              FREQ2 == 3 & FREQ2_D == 3 ~ 50,
+                            !(SUB2 %in% c(1, -9)) & !(SUB2_D %in% c(1, -9)) &
+                              FREQ2 == 2 & FREQ2_D == 1 ~ 75,
+                            !(SUB2 %in% c(1, -9)) & !(SUB2_D %in% c(1, -9)) &
+                              FREQ2 == 2 & FREQ2_D == 2 ~ 50,
+                            !(SUB2 %in% c(1, -9)) & !(SUB2_D %in% c(1, -9)) &
+                              FREQ2 == 2 & FREQ2_D == 3 ~ 25,
+                            !(SUB2 %in% c(1, -9)) & !(SUB2_D %in% c(1, -9)) &
+                              FREQ2 == 1 & FREQ2_D == 1 ~ 50,
+                            !(SUB2 %in% c(1, -9)) & !(SUB2_D %in% c(1, -9)) &
+                              FREQ2 == 1 & FREQ2_D == 2 ~ 25,
+                            !(SUB2 %in% c(1, -9)) & !(SUB2_D %in% c(1, -9)) &
+                              FREQ2 == 1 & FREQ2_D == 3 ~ 0,
+                            .default = NA)) %>%
+  mutate(GRADE3 = case_when(!(SUB3 %in% c(1, -9)) & SUB3==SUB3_D &
+                              FREQ3 == 3 & FREQ3_D == 1 ~ 100,
+                            !(SUB3 %in% c(1, -9)) & !(SUB3_D %in% c(1, -9)) &
+                              FREQ3 == 3 & FREQ3_D == 2 ~ 75,
+                            !(SUB3 %in% c(1, -9)) & !(SUB3_D %in% c(1, -9)) &
+                              FREQ3 == 3 & FREQ3_D == 3 ~ 50,
+                            !(SUB3 %in% c(1, -9)) & !(SUB3_D %in% c(1, -9)) &
+                              FREQ3 == 2 & FREQ3_D == 1 ~ 75,
+                            !(SUB3 %in% c(1, -9)) & !(SUB3_D %in% c(1, -9)) &
+                              FREQ3 == 2 & FREQ3_D == 2 ~ 50,
+                            !(SUB3 %in% c(1, -9)) & !(SUB3_D %in% c(1, -9)) &
+                              FREQ3 == 2 & FREQ3_D == 3 ~ 25,
+                            !(SUB3 %in% c(1, -9)) & !(SUB3_D %in% c(1, -9)) &
+                              FREQ3 == 1 & FREQ3_D == 1 ~ 50,
+                            !(SUB3 %in% c(1, -9)) & !(SUB3_D %in% c(1, -9)) &
+                              FREQ3 == 1 & FREQ3_D == 2 ~ 25,
+                            !(SUB3 %in% c(1, -9)) & !(SUB3_D %in% c(1, -9)) &
+                              FREQ3 == 1 & FREQ3_D == 3 ~ 0,
+                            .default = NA))
+
+filtered_df_col <- filtered_df_col %>%
+  mutate(GRADE = case_when(!is.na(GRADE1) & !is.na(GRADE2)& !is.na(GRADE3) ~ (3*GRADE1 + 2*GRADE2 +GRADE3)/6,
+                           is.na(GRADE1) & is.na(GRADE2) ~ GRADE3,
+                           is.na(GRADE1) & is.na(GRADE3) ~ GRADE2,
+                           is.na(GRADE3) & is.na(GRADE2) ~ GRADE1,
+                           is.na(GRADE1) ~ (2*GRADE2 + GRADE3)/3,
+                           is.na(GRADE2) ~ (3*GRADE1 + GRADE3)/4,
+                           is.na(GRADE3) ~ (3*GRADE1 + 2*GRADE2)/5,
+                            .default = NA))
+
+filtered_df_col <- filtered_df_col[!is.na(filtered_df_col$GRADE),]
+```
+
+
+```{r}
+new_df <- filtered_df_col[, !(names(filtered_df_col) %in% c("GRADE1", "GRADE2", "GRADE3", "SUB1_D", "SUB2_D", "SUB3_D"))]
+new_df <- new_df %>%
+  mutate(assessment = case_when(GRADE >=0 & GRADE <= 48 ~ "Very poor improvement",
+                           GRADE >48 & GRADE <= 50 ~ "Poor improvement",
+                           GRADE >50 & GRADE <= 74 ~ "some improvement",
+                           GRADE >74 & GRADE <= 84 ~ "Good improvement",
+                           GRADE >84 & GRADE <= 100 ~ "Excellent improvement"))
+         
+new_df$assessment <- as.factor(new_df$assessment)
+new_df$GRADE <- round(new_df$GRADE, 0) 
+new_df$GRADE <- as.factor(new_df$GRADE)
+new_df %>%
+  count(assessment)
+```
+
+#the graphs of each service and LOS combinations:
+```{r}
+# Iterate over each service and create a separate graph
+graphs <- lapply(1:8, function(service) {
+  # Filter the data for the specific service
+  filtered_data2 <- new_df %>%
+    filter(SERVICES == service)
+  # Create the graph for the service
+  graph <- ggplot(filtered_data2, aes(x = LOS, fill = factor(GRADE))) +
+    geom_bar(position = "stack") +
+    labs(x = "Length of stay", y = "Count", fill = "Grade") +
+    ggtitle(paste("histogram of grades by LOS for Service", service))
+  
+  # Return the graph
+  return(graph)
+})
+
+# Print the graphs
+for (i in 1:8) {
+  print(graphs[[i]])
+}
+```
+
+#each service and the 2 Recommended Length Of Stay, By Percentages:
+```{r}
+elore_df <- filtered_df_col[, !(names(filtered_df_col) %in% c("GRADE1", "GRADE2", "GRADE3", "SUB1_D", "SUB2_D", "SUB3_D"))]
+elore_df <- elore_df %>%
+  mutate(assessment = case_when(GRADE >=0 & GRADE <= 48 ~ "Very poor improvement",
+                           GRADE >48 & GRADE <= 50 ~ "Poor improvement",
+                           GRADE >50 & GRADE <= 74 ~ "some improvement",
+                           GRADE >74 & GRADE <= 84 ~ "Good improvement",
+                           GRADE >84 & GRADE <= 100 ~ "Excellent improvement"))
+         
+elore_df$assessment <- as.factor(elore_df$assessment)
+elore_df$GRADE <- round(elore_df$GRADE, 0) 
+
+# Filter the data for grades higher than 80
+filtered_data3 <- elore_df %>%
+  filter(GRADE > 80)
+
+# Calculate the number of people that got a grade higher than 80 in each service and LOS
+num_high_grade <- filtered_data3 %>%
+  group_by(SERVICES, LOS) %>%
+  summarize(Num_High_Grade = sum(GRADE > 80)) %>%
+  ungroup()
+
+# Calculate the number of people that got a grade higher than 80 in each service
+num_high_grade_service <- num_high_grade %>%
+  group_by(SERVICES) %>%
+  summarize(Num_High_Grade_Service = sum(Num_High_Grade))
+
+# Calculate the percentage for each service and LOS
+percentage_data <- num_high_grade %>%
+  left_join(num_high_grade_service, by = "SERVICES") %>%
+  mutate(Percentage = Num_High_Grade / Num_High_Grade_Service * 100) %>%
+  select(SERVICES, LOS, Percentage)
+
+# Find the two LOS with the highest percentage for each service
+highest_percentage_data <- percentage_data %>%
+  group_by(SERVICES) %>%
+  top_n(2, Percentage) %>%
+  arrange(SERVICES, desc(Percentage))
+
+# Pivot the data to have one row for each service with Option 1 and Option 2
+reshaped_data <- highest_percentage_data %>%
+  group_by(SERVICES) %>%
+  mutate(rank = row_number()) %>%
+  pivot_wider(names_from = rank, values_from = c(LOS, Percentage), names_prefix = "Option") %>%
+  rename_at(vars(starts_with("Option")), ~paste0("Option", .))
+
+# Print the reshaped data
+print(reshaped_data)
+```
+
+
+```{r}
+ggplot(data = new_df, mapping = aes(x = assessment)) + 
+  geom_bar(stat="count")+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+```
+
+```{r}
+set.seed(1116)
+
+train <- new_df %>% dplyr::sample_frac(0.70)
+test  <- dplyr::anti_join(new_df, train, by = 'CASEID')
+
+train <- train[, names(train)!="CASEID"]
+
+train %>%
+  count(assessment)
+
+```
+
+
+```{r}
+class_to_undersample <- "Poor improvement"
+
+# Set the desired number of instances to keep for the specified class
+desired_instances_to_delete <- 50000
+
+delete_indices <- which(train$assessment == class_to_undersample)
+
+# Randomly select indices to delete from the specified class
+delete_indices <- sample(delete_indices, desired_instances_to_delete)
+
+# Remove the selected records from the specified class
+undersampled_data <- train[-delete_indices, ]
+
+undersampled_data %>%
+  count(assessment)
+```
+
+```{r}
+ggplot(data = undersampled_data, mapping = aes(x = assessment)) + 
+  geom_bar(stat="count")+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+```
+
+### Radnom Forest
+```{r}
+rf_model <- randomForest(assessment ~ STFIPS + FREQ1 + FREQ2 + SUB2 + SERVICES + DIVISION + DSMCRIT + FRSTUSE2 + ROUTE2 + REGION + AGE + PRIMINC + FRSTUSE1 + PRIMPAY + DAYWAIT + PSOURCE + EDUC + HLTHINS +  SUB1 + MARSTAT + EMPLOY + PSYPROB + LIVARAG + RACE + SUB3 + FREQ_ATND_SELF_HELP + ROUTE1 + DETNLF + FREQ3, data = undersampled_data, importance = TRUE)
+top_features <- names(sort(rf_model$importance[, "MeanDecreaseGini"], decreasing = TRUE))
+top_features
+```
+
+#This function gets an new person and his features as input and returns the estimated grade of each one of the 8 services
+```{r}
+predict_assesment_per_service <- function(new_person, model){
+    # Define the list of features to include
+    included_features <- c("STFIPS", "FREQ1", "FREQ2", "SUB2", "SERVICES", "DIVISION", "DSMCRIT", "FRSTUSE2", "ROUTE2", "REGION", "AGE",   "PRIMINC", "FRSTUSE1", "PRIMPAY", "DAYWAIT", "PSOURCE", "EDUC", "HLTHINS", " SUB1", "MARSTAT", "EMPLOY", "PSYPROB", "LIVARAG", "RACE", "SUB3", "FREQ_ATND_SELF_HELP", "ROUTE1", "DETNLF", "FREQ3")
+    
+    # Create an empty data frame to store the predicted assessment for each service
+    predicted_df <- data.frame(Service = 1:8, Assessment = NA)
+    
+    # Loop through each service and predict the assessment
+    for (service in 1:8) {
+      # Set the service value in the new person data
+      new_person$SERVICES <- service
+      
+      # Filter the new person data to include only the relevant features
+      new_person_features <- new_person[, included_features]
+      
+      # Predict the assessment using the model
+      predicted_assessment <- predict(model, newdata = new_person_features, type = "class")
+      
+      # Store the predicted assessment for the current service
+      predicted_df$Assessment[service] <- predicted_assessment
+    }
+    
+    # Print the predicted assessments
+    return(predicted_df)
+}
+
+# Get the first line from the test data as the new person
+new_person <- test[1000, ]
+print(predict_assesment_per_service(new_person, rf_model))
+```
+
+```{r}
+rf_model$importance[, "MeanDecreaseGini"]
+write.csv(rf_model$importance[, "MeanDecreaseGini"], file = "importance_output.csv", row.names = TRUE)
+```
+
+
+```{r}
+y_pred <- predict(rf_all, test)
+y_proba <- predict(rf_all, test, type = "prob")
+levels <- c("Excellent improvement", "Good improvement", "Poor improvement", "some improvement", "Very poor improvement")
+Y_test <- as.numeric(factor(test$assessment, levels = levels))
+X_test <- test[, -which(names(test) == "assessment")]
+classes2 <- factor(class_list)
+
+classes <- unique(train$assessment)
+class_list <- list(classes)
+classes_combinations <- list()
+
+for (i in 1:length(class_list[[1]])) {
+  for (j in min((i+1),length(class_list[[1]])):length(class_list[[1]])) {
+    cat("I: ", i, "J: ", j)
+    if(i!=j){
+      classes_combinations <- c(classes_combinations, list(c(class_list[[1]][i], class_list[[1]][j])))
+      classes_combinations <- c(classes_combinations, list(c(class_list[[1]][j], class_list[[1]][i])))
+    }
+  }
+}
+```
+
+```{r, warning=FALSE}
+plot_roc_curve_ovo <- function(class_pairs, total_acu) {
+  plot(0, 0, type = "n", xlim = c(0, 1), ylim = c(0, 1), xlab = "False Positive Rate", ylab = "True Positive Rate", main = "Receiver Operating Characteristic (ROC) Curve (One-vs-One)")
+  abline(0, 1, lty = 2)  # Diagonal line for random guessing
+  
+  legend_labels <- c()
+
+  for (i in 1:length(class_pairs)) {
+    # Gets the class
+    comb <- class_pairs[[i]]
+    c1 <- comb[1]
+    c2 <- comb[2]
+    
+    if (!is.na(c1) && !is.na(c2)) {
+      title <- paste(c1, "vs", c2)
+      
+      # Prepares an auxiliary dataframe to help with the plots
+      df_aux <- X_test
+      df_aux$class <- Y_test
+      df_aux$prob <- y_proba[, c1]
+      
+      # Slices only the subset with both classes
+      df_aux <- df_aux[df_aux$class == as.numeric(c1) | df_aux$class == as.numeric(c2), ]
+      df_aux$class <- ifelse(df_aux$class == as.numeric(c1), 1, 0)
+      df_aux <- df_aux[order(df_aux$prob), ]
+      
+      y_true <- df_aux$class
+      y_prob <- df_aux$prob
+      
+      roc_data <- roc(y_true, y_prob)
+      roc_auc <- auc(roc_data)
+      total_acu[[paste(c1, c2)]] <- roc_auc
+      
+      # Plot ROC curve with specified color and line width
+      plot(roc_data, col = i, lwd = 2, add = TRUE)
+      legend_labels <- c(legend_labels, title)
+
+    }
+  }
+
+  # Calculate average AUC
+  average_auc <- mean(unlist(total_acu))
+  cat("Average AUC (one-VS-one):", average_auc, "\n")
+  }
+
+all_auc_one <- list()
+plot_roc_curve_ovo(classes_combinations, all_auc_one)
+```
+
+```{r}
+library(knitr)
+
+print_roc_curve_info <- function(class_pairs, total_acu) {
+  color_names <- c("red", "blue", "green", "purple", "orange", "cyan", "magenta", "yellow", "brown", "gray",
+                   "darkgreen", "darkblue", "darkred", "darkorange", "darkcyan", "darkmagenta", "darkgray",
+                   "lightgreen", "lightblue", "pink")
+  
+  results <- data.frame(Class_Pair = character(),
+                        Color = character(),
+                        AUC = numeric(),
+                        stringsAsFactors = FALSE)
+  
+  for (i in 1:length(class_pairs)) {
+    # Gets the class
+    comb <- class_pairs[[i]]
+    c1 <- comb[1]
+    c2 <- comb[2]
+    
+    if (!is.na(c1) && !is.na(c2)) {
+      # Prepares an auxiliary dataframe to help with the plots
+      df_aux <- X_test
+      df_aux$class <- Y_test
+      df_aux$prob <- y_proba[, c1]
+      
+      # Slices only the subset with both classes
+      df_aux <- df_aux[df_aux$class == as.numeric(c1) | df_aux$class == as.numeric(c2), ]
+      df_aux$class <- ifelse(df_aux$class == as.numeric(c1), 1, 0)
+      df_aux <- df_aux[order(df_aux$prob), ]
+      
+      y_true <- df_aux$class
+      y_prob <- df_aux$prob
+      
+      roc_data <- roc(y_true, y_prob)
+      roc_auc <- auc(roc_data)
+      total_acu[[paste(c1, c2)]] <- roc_auc
+      
+      results <- rbind(results, data.frame(Class1 = paste(c1),
+                                           Class2 = paste(c2),
+                                           Color = color_names[i],
+                                           AUC = roc_auc,
+                                           stringsAsFactors = FALSE))
+    }
+  }
+  #results <- results[order(-results$AUC), ]
+  
+  # Print the table
+  kable(results, caption = "ROC Curve Information", align = "c")
+}
+
+all_auc_one <- list()
+print_roc_curve_info(classes_combinations, all_auc_one)
+
+
+```
+
+
+```{r}
+
+plot_roc_curve_ovr <- function(classes, total_acu) {
+  plot(0, 0, type = "n", xlim = c(0, 1), ylim = c(0, 1), xlab = "False Positive Rate", ylab = "True Positive Rate", main = "Receiver Operating Characteristic (ROC) Curve (One-vs-Rest)")
+  abline(0, 1, lty = 2)  # Diagonal line for random guessing
+
+  # Calculate and plot ROC curve for each class
+  for (i in 1:length(classes)) {
+    # Prepares an auxiliary dataframe to help with the plots
+    df_aux <- X_test
+    df_aux$class <- ifelse(Y_test == i, 1, 0)
+    df_aux$prob <- y_proba[, i]
+    df_aux <- df_aux[order(df_aux$prob), ]
+
+    y_true <- df_aux$class
+    y_prob <- df_aux$prob
+    
+    roc_data <- roc(y_true, y_prob)
+    roc_auc <- auc(roc_data)
+    total_acu[[i]] <- roc_auc
+    
+    # Plot ROC curve with specified color and line width
+    plot(roc_data, col = i, lwd = 2, add = TRUE)
+  }
+  legend("bottomleft", legend = classes, col = 1:length(classes), lwd = 2)
+
+  # Calculate average AUC
+  average_auc <- mean(unlist(total_acu))
+  cat("Average AUC (one-VS-Rest):", average_auc, "\n")
+}
+
+all_auc_ovr <- list()
+plot_roc_curve_ovr(classes, all_auc_ovr)
+```
+
+
+```{r}
+# Assuming you have test data in a dataframe called 'test_data'
+y_true <- test$assessment
+conf<-confusionMatrix(y_pred, y_true)
+conf
+```
+
+```{r}
+# Calculate accuracy
+accuracy <- conf$overall['Accuracy']
+cat("Accuracy:", accuracy)
+
+# Calculate F1 score
+f1_score <- conf$byClass['F1']
+cat("F1 Score:", f1_score)
+
+# Calculate recall (Sensitivity)
+recall <- conf$byClass['Sensitivity']
+cat("Recall:", recall)
+
+
+
+
+predictions <- predict(rf_v1_1drug, newdata = test)
+cmRF <- table(predictions, test$assessment)
+```
+### measures for the Random Forest model:
+```{r, echo=TRUE}
+# Assuming you have predicted class labels stored in 'predicted_labels' and true class labels stored in 'true_labels'
+
+
+# Calculate precision, recall, and F1-score for each class
+precision_RF <- diag(cmRF) / colSums(cmRF)
+recall_RF <- diag(cmRF) / rowSums(cmRF)
+f1_score_RF <- 2 * (precision_RF * recall_RF) / (precision_RF + recall_RF)
+
+# Calculate macro-average F1-score
+macro_avg_f1_score_RF <- mean(f1_score_RF)
+
+# Calculate weighted-average F1-score
+class_proportions_RF <- prop.table(colSums(cmRF))
+weighted_avg_f1_score_RF <- sum(f1_score_RF * class_proportions_RF)
+
+# Print the F1-scores
+print(f1_score_RF)
+
+# Print the macro-average and weighted-average F1-scores
+print(macro_avg_f1_score_RF)
+print(weighted_avg_f1_score_RF)
+```
+### Predict new sample
+```{r}
+filtered_df_col
+
+new_sample <- data.frame()
+```
+
+### Cleaning test set
+```{r}
+test %>%
+  count(assessment)
+
+# Set the desired number of instances to keep for the specified class
+desired_instances_to_delete <- 27000
+
+delete_indices <- which(test$assessment == class_to_undersample)
+
+# Randomly select indices to delete from the specified class
+delete_indices <- sample(delete_indices, desired_instances_to_delete)
+
+# Remove the selected records from the specified class
+undersampled_data_test <- test[-delete_indices, ]
+
+undersampled_data_test %>%
+  count(assessment)
+```
+
+
+# Train & Test for each data set for the multiclass classification model:
+## first try : use all features (except STFIPS and CBSA2010 which contain state information, and except columns that had high correlation to ohter columns (ROUTE2, ROUTE3, FRSTUSE3, DIVISION, 	FRSTUSE2)), without DETNLF because it has more than 75% missing values:
+```{r}
+
+grade_formula <- "GRADE ~ EDUC + MARSTAT + SERVICES + DETCRIM + LOS + PSOURCE + NOPRIOR + ARRESTS + EMPLOY + METHUSE + PSYPROB + PREG + GENDER + VET + LIVARAG + DAYWAIT + DSMCRIT + AGE + RACE + PRIMINC +  FREQ1  +  FREQ2  +  FREQ3  +  SUB1  +  SUB2 +  SUB3 + FRSTUSE1 + HLTHINS + PRIMPAY + FREQ_ATND_SELF_HELP + ALCFLG + COKEFLG + MARFLG + HERFLG + METHFLG + OPSYNFLG + PCPFLG + HALLFLG + MTHAMFLG + AMPHFLG  +  STIMFLG  +  BENZFLG  +  BARBFLG  +  SEDHPFLG  +  INHFLG  +  OTCFLG  +  OTHERFLG + IDU + ALCDRUG"
+
+assessment_formula1 <- "assessment ~ FREQ1 + FREQ2 + SUB2 + SERVICES + FREQ3 + ROUTE2 + FRSTUSE2 + DSMCRIT +
+PRIMPAY + PSOURCE + SUB3 + DETNLF + STFIPS + DAYWAIT + SUB1 + ALCDRUG + MARFLG + HLTHINS + HERFLG + AGE + EMPLOY +
+EDUC"
+
+assessment_formula <- "assessment ~ FREQ1 + FREQ2 + FREQ3 + SUB1 + SUB2 + SUB3 + ARRESTS + PSOURCE + PRIMPAY + ALCFLG + COKEFLG + MARFLG + HERFLG + METHFLG + OPSYNFLG + PCPFLG + HALLFLG + MTHAMFLG + AMPHFLG + STIMFLG + BENZFLG + TRNQFLG + BARBFLG + SEDHPFLG + INHFLG + OTCFLG + OTHERFLG"
+
+
+model_words_train <- multinom(assessment_formula, data = train)
+predict_words_train <- predict(model_words_train, test, type = "class")
+
+```
+
+
+```{r}
+model_words_train <- multinom(assessment_formula, data = train)
+predict_words_train <- predict(model_words_train, test, type = "class")
+```
+
+```{r}
+model_words_undersampled <- multinom(assessment_formula, data = undersampled_data)
+predict_words_under <- predict(model_words_undersampled, test, type = "class")
+```
+
+
+7. Prediction on the test data sets:
+```{r, echo=TRUE}
+#model_grade <- multinom(grade_formula, data = train)
+#predict_grade <- predict(model_grade, test, type = "class")
+
+```
+
+8. Confusion Matrices:
+```{r, echo=TRUE}
+confusion_words_under <- (table(Predicted=predict_words_under,
+                   True=test$assessment))
+
+confusion_words_under
+
+
+confusion_words_train <- (table(Predicted=predict_words_train,
+                   True=test$assessment))
+
+confusion_words_train
+
+```
+
+### measures for the undersampling model:
+```{r, echo=TRUE}
+# Assuming you have predicted class labels stored in 'predicted_labels' and true class labels stored in 'true_labels'
+
+
+# Calculate precision, recall, and F1-score for each class
+precision_under <- diag(confusion_words_under) / colSums(confusion_words_under)
+recall_under <- diag(confusion_words_under) / rowSums(confusion_words_under)
+f1_score_under <- 2 * (precision_under * recall_under) / (precision_under + recall_under)
+
+# Calculate macro-average F1-score
+macro_avg_f1_score_under <- mean(f1_score_under)
+
+# Calculate weighted-average F1-score
+class_proportions_under <- prop.table(colSums(confusion_words_under))
+weighted_avg_f1_score_under <- sum(f1_score_under * class_proportions_under)
+
+# Print the F1-scores
+print(f1_score_under)
+
+# Print the macro-average and weighted-average F1-scores
+print(macro_avg_f1_score_under)
+print(weighted_avg_f1_score_under)
+```
+
+### measures for the original model:
+```{r, echo=TRUE}
+# Assuming you have predicted class labels stored in 'predicted_labels' and true class labels stored in 'true_labels'
+
+
+# Calculate precision, recall, and F1-score for each class
+precision_train <- diag(confusion_words_train) / colSums(confusion_words_train)
+recall_train <- diag(confusion_words_train) / rowSums(confusion_words_train)
+f1_score_train <- 2 * (precision_train * recall_train) / (precision_train + recall_train)
+
+# Calculate macro-average F1-score
+macro_avg_f1_score_train <- mean(f1_score_train)
+
+# Calculate weighted-average F1-score
+class_proportions_train <- prop.table(colSums(confusion_words_train))
+weighted_avg_f1_score_train <- sum(f1_score_train * class_proportions_train)
+
+# Print the F1-scores
+print(f1_score_train)
+
+# Print the macro-average and weighted-average F1-scores
+print(macro_avg_f1_score_train)
+print(weighted_avg_f1_score_train)
+```
+
+9. Confusion Matrices rates:
+```{r, echo=FALSE}
+precision_words <- confusion_words$byClass['Pos Pred Value']
+recall_words <- confusion_words$byClass['Sensitivity']
+FScore_words <- 2 * ((precision_words * recall_words) / (precision_words + recall_words))
+
+#precision_grade <- confusion_grade$byClass['Pos Pred Value']
+#recall_grade <- confusion_grade$byClass['Sensitivity']
+#FScore_grade <- 2 * ((precision_grade * recall_grade) / (precision_grade + recall_grade))
+
+precision_words
+
+#glue('Precision of words:', {precision_words}, 'recall:', {recall_words}, 'FSCORE:', {FScore_words})
+#glue('Precision of grade:', {precision_v12}, 'recall:', {recall_v12}, 'FSCORE:', {FScore_v12})
+```
+
+```{r, echo=FALSE}
+library(ggplot2)
+library(reshape2)
+
+#df <- new_df[, !(names(new_df) %in% c("CASEID", "GRADE2", "GRADE3", "assessment", "GRADE"))]
+
+# Select columns with more than 1 unique value
+#df <- df[, sapply(df, function(col) length(unique(col))) > 1]
+
+# Compute correlation matrix
+#corr <- cor(df)
+
+# Plot heatmap
+plt <- ggplot(melt(corr), aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "purple", high = "white") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = "", y = "") 
+
+print(plt)
+```
+
+
+```{r, echo=FALSE}
+
+
+indices <- which(abs(corr) > 0.5, arr.ind = TRUE)
+
+# Extract feature pairs and correlation values
+high_corr_pairs <- data.frame(
+  Var1 = rownames(corr)[indices[, 1]],
+  Var2 = colnames(corr)[indices[, 2]],
+  Correlation = abs(corr[indices])
+)
+
+high_corr_pairs <- high_corr_pairs[(high_corr_pairs$Var1 != high_corr_pairs$Var2) & high_corr_pairs$Correlation > 0.75, ]
+high_corr_pairs <- high_corr_pairs[order(desc(high_corr_pairs$Correlation)), ]
+
+# Print high correlation pairs
+cat("Pairs of features with correlation > 0.5:\n")
+print(high_corr_pairs)
+```
