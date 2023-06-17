@@ -10,6 +10,9 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r load-packages, message=FALSE}
 # first, import all necessary libraries
+library(foreign)
+library(nnet)
+library(haven)
 library(readr)
 library(dplyr)
 library(tidyverse)
