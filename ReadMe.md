@@ -15,7 +15,7 @@ The necessary data can be downloaded from this [link](https://www.datafiles.samh
 This step involves gathering historical patient data, including demographic information, medical history, treatment details, and corresponding improvement measurements. 
 The collected data is then organized and preprocessed to ensure its quality and suitability for analysis.
 The preprocessing involves:
-1. We cleaned the dataset by removing patients who did not complete the treatment. To achieve this, we applied a filter based on the "REASON" feature, specifically selecting records where the value of "REASON" was equal to 1. The description of the "REASON" feature is provided below.
+1. Cleaning the dataset by removing patients who did not complete the treatment. To achieve this, we applied a filter based on the "REASON" feature, specifically selecting records where the value of "REASON" was equal to 1. The description of the "REASON" feature is provided below.
 
 |Reason |Treatment Combination | 
 |--|------------------------------------------------------|
@@ -104,9 +104,9 @@ To comprehensively assess the relationship between the features and the target v
 
 Once the prediction model is trained and evaluated, it is integrated into the Decision Support System. The code provides an interface to input new patient information and simulates multiple treatment scenarios based on the trained model. The predicted improvements for each treatment scenario are calculated (assessement), and the code identifies the set of successful treatments that yield the highest improvement.
 
-## Step 6: Generating Treatment Recommendations
+## Step 6: Generating Holistic Treatment Recommendations
 
-Based on the predictions from the DSS, the code generates treatment recommendations for the new patient. These recommendations consist of a set of successful treatment scenarios that are likely to result in the best improvement. The code provides functions to analyze the predictions, rank the treatments based on predicted improvement, and present the recommendations to the user.
+Based on the predictions from the DSS, decision makers can use a summary table that presents the two best lengths of stay (LOS) for each service, based on the rates of good and excellent treatment outcomes. We included this table to emphasize the importance of considering not only the type of treatment but also the length of stay in the treatment program. By embracing a holistic and personalized approach to treatment, decision makers can optimize the effectiveness of the rehab program and ensure that it aligns with the individual needs of each client.
 
 ## Step 7: Iterative Improvement and Refinement
 
